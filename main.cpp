@@ -5,6 +5,40 @@
 #include "include/components/init_comp.hpp"
 #include "include/threads.hpp"
 
+void measureExecutionTime(void *(*threadFunc)(void *), void *args,
+                          const char *threadName) {
+  struct timespec start, end;
+  double elapsedTime, maxExecutionTime = 0.0;
+
+  for (int i = 1; i <= 30; i++) { // Repeat the thread execution to find WCET
+    // Record the start time with high precision
+    clock_gettime(CLOCK_MONOTONIC, &start);
+
+    pthread_t thread;
+    if (pthread_create(&thread, NULL, threadFunc, args) != 0) {
+      printf("[ERROR] - Cannot create %s\n", threadName);
+      exit(EXIT_FAILURE);
+    }
+    pthread_join(thread, NULL);
+
+    // Record the end time with high precision
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    // Calculate elapsed time in microseconds with finer precision
+    elapsedTime =
+        (end.tv_sec - start.tv_sec) * 1e6 + (end.tv_nsec - start.tv_nsec) / 1e3;
+
+    // Update the maximum execution time if needed
+    if (elapsedTime > maxExecutionTime) {
+      maxExecutionTime = elapsedTime;
+    }
+
+  /* printf("[CYCLE] WCET for %s: %.3f microseconds in iteration %d\n", threadName, i);   */
+  }
+
+  // Print the worst-case execution time with finer precision
+  printf("[INFO] WCET for %s: %.3f microseconds\n", threadName,
+         maxExecutionTime);
+}
 
 int main() {
   CubeSystem c; // System struct
@@ -38,53 +72,12 @@ int main() {
   pthread_attr_setinheritsched(&displayAttr, PTHREAD_EXPLICIT_SCHED);
   pthread_attr_setinheritsched(&RRthreads, PTHREAD_EXPLICIT_SCHED);
 
-  // Initialize Cube system
-  pthread_t initCubeSystemThread;
-  if (pthread_create(&initCubeSystemThread, &initAttributes, createCubeSystem,
-                     (void *)&c) != 0) {
-    printf("[ERROR] - Cannot create initCubeSystemThread\n");
-    exit(EXIT_FAILURE);
-  }
-  pthread_join(initCubeSystemThread, NULL);
-
-  // Update led display
-  pthread_t displayCubeThread;
-  if (pthread_create(&displayCubeThread, &displayAttr, displayCube, (void *)&c) !=
-      0) {
-    printf("[ERROR] - Cannot create displayCube\n");
-    exit(EXIT_FAILURE);
-  }
-
-  // read Buttons
-  pthread_t readButtonsThread;
-  if (pthread_create(&readButtonsThread, &RRthreads, readButtons, (void *)&c) !=
-      0) {
-    printf("[ERROR] - Cannot create readButtonsThread\n");
-    exit(EXIT_FAILURE);
-  }
-
-  pthread_t updateSnakeDirectionsThreads;
-  if (pthread_create(&updateSnakeDirectionsThreads, &RRthreads,
-                     updateSnakeDirection, (void *)&c) != 0) {
-    printf("[ERROR] - Cannot create updateSnakeDirectionsThreads\n");
-    exit(EXIT_FAILURE);
-  }
-
-  pthread_t systemTransitionsThread;
-  if (pthread_create(&systemTransitionsThread, &RRthreads,
-                     systemStateTransitions, (void *)&c) != 0) {
-    printf("[ERROR] - Cannot create readButtonsThread\n");
-    exit(EXIT_FAILURE);
-  }
-
-  pthread_t systemActionsThread;
-  if (pthread_create(&systemTransitionsThread, &RRthreads, systemStateActions,
-                     (void *)&c) != 0) {
-    printf("[ERROR] - Cannot create systemActionsThread\n");
-    exit(EXIT_FAILURE);
-  }
-
-  pthread_join(displayCubeThread, NULL);
+  measureExecutionTime(createCubeSystem, &c, "createCubeSystem");
+  measureExecutionTime(displayCube, &c, "displayCube");
+  measureExecutionTime(readButtons, &c, "readButtons");
+  measureExecutionTime(updateSnakeDirection, &c, "updateSnakeDirection");
+  measureExecutionTime(systemStateTransitions, &c, "systemStateTransitions");
+  measureExecutionTime(systemStateActions, &c, "systemStateActions");
 
   // reset expanders and shifters to exit program
   pthread_t resetThread;
@@ -99,3 +92,4 @@ int main() {
 
   return EXIT_SUCCESS;
 }
+
